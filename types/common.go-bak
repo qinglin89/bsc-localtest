@@ -1,0 +1,126 @@
+package types
+
+import (
+	"container/list"
+	"math/big"
+	"time"
+)
+
+var big0 = big.NewInt(0)
+var big180 = big.NewInt(180)
+
+type releaseList struct {
+	tReleased  *big.Int
+	released   *big.Int
+	tLocked    *big.Int
+	timestamp  time.Time
+	rTimestamp time.Time
+	//	blockNum  uint64
+	*list.List
+}
+
+func NewRL() *releaseList {
+	return &releaseList{
+		tReleased: big.NewInt(0),
+		released:  big.NewInt(0),
+		tLocked:   big.NewInt(0),
+		List:      list.New(),
+	}
+}
+
+func (r *releaseList) Put(locked *big.Int, t time.Time) {
+	if r.Len() > 0 && !t.Equal(r.timestamp.AddDate(0, 0, 1)) {
+		return
+	}
+	switch r.Len() {
+	case 0:
+		r.PushBack(locked)
+		r.tLocked.Add(r.tLocked, locked)
+	case 180:
+		r.released.Div(r.tLocked, big180)
+		r.tReleased.Add(r.tReleased, r.released)
+		r.PushBack(locked)
+		r.tLocked.Add(r.tLocked, locked)
+		tmp := r.Front()
+		r.tLocked.Sub(r.tLocked, tmp.Value.(*big.Int))
+		r.Remove(tmp)
+	default:
+		r.released.Div(r.tLocked, big180)
+		r.tReleased.Add(r.tReleased, r.released)
+		r.PushBack(locked)
+		r.tLocked.Add(r.tLocked, locked)
+	}
+	r.timestamp = t
+	r.rTimestamp = t
+}
+
+//func (r *releaseList) PutM(locked *big.Int, t time.Time) {
+//	if r.Len() > 0 && !t.Equal(r.timestamp.AddDate(0, 0, 1)) {
+//		return
+//	}
+//	switch r.Len() {
+//	case 0:
+//		r.PushBack(locked)
+//		r.tLocked.Add(r.tLocked, locked)
+//	case 180:
+//		r.released.Div(r.tLocked, big180)
+//		r.tReleased.Add(r.tReleased, r.released)
+//		r.PushBack(locked)
+//		r.tLocked.Add(r.tLocked, locked)
+//		tmp := r.Front()
+//		r.tLocked.Sub(r.tLocked, tmp.Value.(*big.Int))
+//		r.Remove(tmp)
+//	default:
+//		r.released.Div(r.tLocked, big180)
+//		r.tReleased.Add(r.tReleased, r.released)
+//		r.PushBack(locked)
+//		r.tLocked.Add(r.tLocked, locked)
+//	}
+//	r.timestamp = t
+//	r.rTimestamp = t
+//
+//}
+
+func (r *releaseList) CalReleased(t time.Time) {
+	d := int(t.Sub(r.timestamp).Hours() / 24)
+	//	tmp := big.NewInt(0)
+	if d <= 0 {
+		return
+	}
+	l := r.Len() //<=180
+	if d+l > 181 {
+		r.released.Div(r.tLocked, big180)
+		r.tReleased.Add(r.tReleased, new(big.Int).Mul(r.released, big.NewInt(int64(181-l))))
+		d = d + l - 181
+		first := r.Front()
+		for i := 0; i < d; i++ {
+			tmp := first
+			r.tLocked.Sub(r.tLocked, first.Value.(*big.Int))
+			r.released.Div(r.tLocked, big180)
+			r.tReleased.Add(r.tReleased, r.released)
+			first = first.Next()
+			r.Remove(tmp)
+			if first == nil {
+				break
+			}
+		}
+	} else {
+		//		tmp.Div(r.tLocked, big180)
+		r.released.Div(r.tLocked, big180)
+		r.tReleased.Add(r.tReleased, new(big.Int).Mul(r.released, big.NewInt(int64(d))))
+		//		tmp.Mul(tmp, big.NewInt(int64(d)))
+	}
+	r.rTimestamp = t
+
+}
+
+func (r *releaseList) GetRByT(t time.Time) (*big.Int, *big.Int) {
+	if r.rTimestamp.Equal(t) {
+		return new(big.Int).Add(r.released, big0), new(big.Int).Add(r.tReleased, big0)
+	}
+	return big.NewInt(-1), big.NewInt(-1)
+}
+
+func (r *releaseList) GetR() (*big.Int, *big.Int) {
+	return new(big.Int).Add(r.released, big0), new(big.Int).Add(r.tReleased, big0)
+}
