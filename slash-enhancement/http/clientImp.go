@@ -2,6 +2,7 @@ package http
 
 import (
 	"bytes"
+	"fmt"
 	"io/ioutil"
 	"net/http"
 	"time"
@@ -24,10 +25,12 @@ func init() {
 
 // PostJSON post
 func (c *FClient) PostJSON(data, url string) types.HttpResponse {
-	req, _ := http.NewRequest("POST", url, bytes.NewBuffer([]byte(data)))
+	fmt.Println("DEBUG: url", url)
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer([]byte(data)))
+	fmt.Println("DEBUG req-err:", req, err)
 	req.Header.Set("Content-Type", "application/json")
 	resp := &http.Response{}
-	var err error
+	//	var err error
 	if resp, err = client.Do(req); err != nil {
 		return types.HttpResponse{
 			Err: err,

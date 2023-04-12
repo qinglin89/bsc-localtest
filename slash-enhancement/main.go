@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"strconv"
 	"time"
@@ -8,7 +9,10 @@ import (
 	"github.com/qinglin89/gobsc/agent"
 )
 
-const valCurrent = "0x3b282587d4d4b197117a4279abe886c905538cc0"
+// var valCurrent = "0x814630766de022050b4f60bda77d6a8433f4303b"
+var valCurrent string
+var addr string
+var bsc = agent.DefaultBsc
 
 const lenV = 5
 
@@ -85,7 +89,17 @@ func (v *vals) CalBlockNumberBySlash(nSlashed int64, offTurnVal string, idxInTur
 }
 
 func main() {
-	defer agent.DefaultBsc.StartMiner()
+	flag.StringVar(&valCurrent, "val", "", "address of the validator to be slashed")
+	flag.StringVar(&addr, "addr", "", "listen address of node rpc")
+	flag.Parse()
+	//bsc := bsc
+	//	defer bsc.StartMiner()
+	fmt.Println("DEBUG: addr", addr)
+	if addr != "" {
+		bsc = agent.Bsc{URL: "http://" + addr}
+	}
+	defer bsc.StartMiner()
+	fmt.Println("DEBUG: url", bsc.URL)
 	for {
 		fmt.Println("\n===============================================")
 		fmt.Println("WAITING...")
@@ -98,23 +112,23 @@ func main() {
 		}
 		nPrev, validators := WaitForVal(n, prev, validators)
 		fmt.Println("SLASH: start on blockNumber:", nPrev+1)
-		agent.DefaultBsc.StopMiner()
-		n, _ = agent.DefaultBsc.GetBlockNumber()
+		bsc.StopMiner()
+		n, _ = bsc.GetBlockNumber()
 		for n == nPrev {
 			time.Sleep(1 * time.Second)
-			n, _ = agent.DefaultBsc.GetBlockNumber()
+			n, _ = bsc.GetBlockNumber()
 		}
 		if n > nPrev+1 {
 			fmt.Println("RESTART LOOP: something wrong happend")
 			continue
 		}
-		b, _ := agent.DefaultBsc.GetBlockByNumber(n)
+		b, _ := bsc.GetBlockByNumber(n)
 		fmt.Printf("1. number:%d, miner:%s\n", n, b.Miner)
 		if b.Difficulty != "0x1" {
 			fmt.Println("RESTART LOOP: offturn slash should have difficulty=0x1, miner.Stop might fail")
 			continue
 		}
-		agent.DefaultBsc.StartMiner()
+		bsc.StartMiner()
 		offTurnVal := b.Miner
 		rTmp, ok := validators.CheckRecent(offTurnVal, idxCur)
 		recs := NewRecents(len(validators) / 2)
@@ -135,7 +149,7 @@ func main() {
 func CheckSlash(nPrev, nextBlockBySlash int64, recs *recents, validators *vals, offTurnVal string) {
 	nCum := 0
 	for {
-		n, _ := agent.DefaultBsc.GetBlockNumber()
+		n, _ := bsc.GetBlockNumber()
 		if n == nPrev {
 			time.Sleep(1 * time.Second)
 			continue
@@ -145,7 +159,7 @@ func CheckSlash(nPrev, nextBlockBySlash int64, recs *recents, validators *vals, 
 			return
 		}
 		nPrev = n
-		b, _ := agent.DefaultBsc.GetBlockByNumber(n)
+		b, _ := bsc.GetBlockByNumber(n)
 		fmt.Printf("2. number:%d, miner:%s\n", n, b.Miner)
 		if b.Difficulty == "0x2" {
 			recs.Push(b.Miner)
@@ -167,7 +181,7 @@ func CheckSlash(nPrev, nextBlockBySlash int64, recs *recents, validators *vals, 
 				}
 				if recs.CheckRecent(offTurnVal) {
 					//3s
-					bPrev, _ := agent.DefaultBsc.GetBlockByNumber(n - 1)
+					bPrev, _ := bsc.GetBlockByNumber(n - 1)
 					//t1, _ := strconv.Atoi(b.Timestamp[2:])
 					//t2, _ := strconv.Atoi(bPrev.Timestamp[2:])
 					t1, _ := strconv.ParseInt(b.Timestamp[2:], 16, 64)
@@ -180,7 +194,7 @@ func CheckSlash(nPrev, nextBlockBySlash int64, recs *recents, validators *vals, 
 					}
 				} else {
 					//4s
-					bPrev, _ := agent.DefaultBsc.GetBlockByNumber(n - 1)
+					bPrev, _ := bsc.GetBlockByNumber(n - 1)
 					//					t1, _ := strconv.Atoi(b.Timestamp[2:])
 					//					t2, _ := strconv.Atoi(bPrev.Timestamp[2:])
 					t1, _ := strconv.ParseInt(b.Timestamp[2:], 16, 64)
@@ -211,7 +225,7 @@ func CheckSlash(nPrev, nextBlockBySlash int64, recs *recents, validators *vals, 
 
 func WaitForVal(prevN int64, val string, validators *vals) (int64, *vals) {
 	for {
-		n, err := agent.DefaultBsc.GetBlockNumber()
+		n, err := bsc.GetBlockNumber()
 		if err != nil || n == prevN {
 			time.Sleep(1 * time.Second)
 			continue
@@ -222,7 +236,7 @@ func WaitForVal(prevN int64, val string, validators *vals) (int64, *vals) {
 			return WaitForVal(prevN, preVal, validators)
 		}
 		prevN = n
-		b, err := agent.DefaultBsc.GetBlockByNumber(n)
+		b, err := bsc.GetBlockByNumber(n)
 		fmt.Printf("3. number:%d, miner:%s\n", n, b.Miner)
 		if err != nil {
 			//	time.Sleep(1 * time.Second)
@@ -241,7 +255,7 @@ func WaitForVal(prevN int64, val string, validators *vals) (int64, *vals) {
 }
 
 func GetValidators() (*vals, int64) {
-	n, err := agent.DefaultBsc.GetBlockNumber()
+	n, err := bsc.GetBlockNumber()
 
 	if err != nil {
 		panic(err)
@@ -250,10 +264,10 @@ func GetValidators() (*vals, int64) {
 	validators := vals{}
 	prevN := n
 	index := 0
-	b, err := agent.DefaultBsc.GetBlockByNumber(n)
+	b, err := bsc.GetBlockByNumber(n)
 	tPrev, _ := strconv.ParseInt(b.Timestamp[2:], 16, 64)
 	for {
-		n, err := agent.DefaultBsc.GetBlockNumber()
+		n, err := bsc.GetBlockNumber()
 		if n == prevN {
 			time.Sleep(1 * time.Second)
 			continue
@@ -265,7 +279,7 @@ func GetValidators() (*vals, int64) {
 			continue
 		}
 		prevN = n
-		b, err = agent.DefaultBsc.GetBlockByNumber(n)
+		b, err = bsc.GetBlockByNumber(n)
 		t, _ := strconv.ParseInt(b.Timestamp[2:], 16, 64)
 		fmt.Printf("4. number:%d, miner:%s, timestampDelta:%d\n", n, b.Miner, t-tPrev)
 		tPrev = t
